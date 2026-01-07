@@ -1,10 +1,9 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
-    // 允许 Server Actions 接收最高 10MB 的数据
     serverActions: {
-      bodySizeLimit: "10mb",
+      // ⭐ 必须添加这一行，将限制提升到 10MB
+      bodySizeLimit: '10mb', 
     },
   },
 };
