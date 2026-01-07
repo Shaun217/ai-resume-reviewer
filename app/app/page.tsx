@@ -24,24 +24,40 @@ export default function AppPage() {
   };
 
   useEffect(() => {
+    // 1. 获取当前登录用户
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     fetchJobs();
-
-    // ⭐ 实时订阅：监听数据库更新，自动同步卡片状态
-    const channel = supabase.channel("db-changes")
+  
+    // 2. 建立实时订阅并打印日志
+    console.log(">>> [调试] 正在初始化 Supabase 实时订阅...");
+  
+    const channel = supabase
+      .channel("jobs_realtime")
       .on(
-        "postgres_changes", 
-        { event: "UPDATE", schema: "public", table: "jobs" }, 
+        "postgres_changes",
+        { 
+          event: "UPDATE", // 核心：监听 AI 回写导致的更新
+          schema: "public", 
+          table: "jobs" 
+        },
         (payload) => {
-          // 当后台分析完成，更新 status 时，前端自动替换该卡片的数据
+          // ⭐ 如果开启成功，提交简历后这里会疯狂跳出日志
+          console.log(">>> [核心调试] 实时更新送达！新数据如下:", payload.new);
+          
           setJobs((currentJobs) =>
             currentJobs.map((job) => (job.id === payload.new.id ? payload.new : job))
           );
         }
       )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => {
+        // 查看订阅是否成功连接 (应该是 'SUBSCRIBED')
+        console.log(">>> [调试] 订阅连接状态:", status);
+      });
+  
+    return () => {
+      console.log(">>> [调试] 页面卸载，正在销毁订阅...");
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleSubmit = async () => {
