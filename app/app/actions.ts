@@ -42,12 +42,16 @@ export async function analyzeResume(formData: {
     throw new Error("数据库写入失败");
   }
 
-  console.log(`>>> [节点 2] 记录已生成 (ID: ${job.id})。启动 Gemini 2.5 Flash 后台分析...`);
+  console.log(`>>> [节点 2] 记录已生成 (ID: ${job.id})。启动 AI 实时分析...`);
 
-  // 异步触发 AI 分析（不阻塞主线程，让用户立刻看到“处理中”状态）
-  runAiAnalysis(job.id, formData.resumeText, formData.position).catch((err) => {
-    console.error("!!! 后台异步进程报错:", err);
-  });
+  // ⭐ 关键修改：添加 await，确保 Vercel 不会在 AI 运行完之前杀掉进程
+  try {
+    await runAiAnalysis(job.id, formData.resumeText, formData.position);
+    console.log(">>> [节点 8] AI 分析与回写全部完成。");
+  } catch (err) {
+    console.error("!!! AI 分析阶段报错:", err);
+    // 这里不需要 throw，因为我们在 runAiAnalysis 内部已经处理了错误状态更新
+  }
 
   return { jobId: job.id };
 }
