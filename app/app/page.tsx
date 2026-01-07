@@ -1,14 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { analyzeResume } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Send, History, LogOut, CheckCircle2, XCircle, ChevronDown, ChevronUp, PlusCircle, Target, FileText, Edit3, Sparkles, Cpu, User, Trash2, FileSearch } from "lucide-react";
+import { 
+  Loader2, Send, History, LogOut, CheckCircle2, XCircle, 
+  ChevronDown, ChevronUp, PlusCircle, Target, FileText, 
+  Edit3, Sparkles, Cpu, User, Trash2, FileSearch, 
+  UploadCloud, Mail, Phone, Copy 
+} from "lucide-react";
 
 export default function AppPage() {
   const [user, setUser] = useState<any>(null);
@@ -25,15 +30,65 @@ export default function AppPage() {
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileReq, setNewProfileReq] = useState("");
 
-  // 删除状态
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ---------------- 修复后的核心函数 ----------------
+
+  // 修复 toggleExpand：使用函数式更新防止状态冲突
   const toggleExpand = (id: string) => {
-    const newIds = new Set(expandedIds);
-    if (newIds.has(id)) newIds.delete(id);
-    else newIds.add(id);
-    setExpandedIds(newIds);
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
+
+  // 修复 handleSaveProfile：确保逻辑闭环与权限校验
+  const handleSaveProfile = async () => {
+    if (!newProfileName.trim() || !newProfileReq.trim()) {
+      return toast.error("请填写完整的岗位名称和要求");
+    }
+    if (!user?.id) return toast.error("登录状态异常，请重新登录");
+
+    try {
+      if (editingProfileId) {
+        // 更新逻辑
+        const { error } = await supabase
+          .from("job_profiles")
+          .update({ name: newProfileName, requirements: newProfileReq })
+          .eq("id", editingProfileId);
+
+        if (error) throw error;
+        toast.success("岗位画像更新成功");
+      } else {
+        // 新增逻辑
+        const { data, error } = await supabase
+          .from("job_profiles")
+          .insert([{ name: newProfileName, requirements: newProfileReq, user_id: user.id }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        setProfiles([data, ...profiles]);
+        toast.success("新岗位画像已存入云端");
+      }
+
+      // 重置所有输入状态
+      setIsAddingProfile(false);
+      setEditingProfileId(null);
+      setNewProfileName("");
+      setNewProfileReq("");
+      fetchProfiles(); // 刷新列表
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e.message || "保存失败，请检查权限");
+    }
+  };
+
+  // ---------------- 其他功能函数 ----------------
 
   const fetchJobs = async () => {
     const { data } = await supabase.from("jobs").select("*").not("result", "is", null).order("created_at", { ascending: false });
@@ -45,247 +100,233 @@ export default function AppPage() {
     if (data) setProfiles(data);
   };
 
-  // 核心功能：编辑模式
-  const startEditing = (id: string) => {
-    const profile = profiles.find(p => p.id === id);
-    if (profile) {
-      setEditingProfileId(profile.id);
-      setNewProfileName(profile.name);
-      setNewProfileReq(profile.requirements);
-      setIsAddingProfile(true);
-    }
-  };
-
-  // 核心功能：物理删除
-  const executeDelete = async (id: string) => {
-    const previousJobs = [...jobs];
-    setJobs(jobs.filter(j => j.id !== id));
-    setDeletingId(null);
-    const { error } = await supabase.from("jobs").delete().eq("id", id);
-    if (error) {
-      setJobs(previousJobs);
-      toast.error("删除失败");
-    } else {
-      toast.success("记录已永久删除");
-    }
-  };
-
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
-      if (data.user) {
-        fetchProfiles();
-        fetchJobs();
-      }
+      if (data.user) { fetchProfiles(); fetchJobs(); }
     });
-
-    const channel = supabase.channel("jobs_realtime_sync").on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => fetchJobs()).subscribe();
+    const channel = supabase.channel("sync").on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => fetchJobs()).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleSaveProfile = async () => {
-    if (!newProfileName || !newProfileReq) return toast.error("请填写完整信息");
-    if (editingProfileId) {
-      const { error } = await supabase.from("job_profiles").update({ name: newProfileName, requirements: newProfileReq }).eq("id", editingProfileId);
-      if (error) return toast.error("更新失败");
-      toast.success("岗位画像已更新");
-    } else {
-      const { data, error } = await supabase.from("job_profiles").insert([{ name: newProfileName, requirements: newProfileReq, user_id: user.id }]).select().single();
-      if (error) return toast.error("保存失败");
-      setProfiles([data, ...profiles]);
-      toast.success("岗位画像已保存");
-    }
-    fetchProfiles();
-    setIsAddingProfile(false);
-    setEditingProfileId(null);
-    setNewProfileName("");
-    setNewProfileReq("");
+  const copyToClipboard = (text: string, label: string) => {
+    if (!text || text === "未提取") return toast.error("无内容可复制");
+    navigator.clipboard.writeText(text);
+    toast.success(`${label}已复制到剪贴板`);
   };
 
-  const handleSubmit = async () => {
-    const selectedProfile = profiles.find(p => p.id === selectedProfileId);
-    if (!selectedProfile || !resume.trim()) return toast.error("请选择岗位并粘贴简历");
-    setLoading(true);
+  const executeDelete = async (id: string) => {
+    setJobs(jobs.filter(j => j.id !== id));
+    setDeletingId(null);
+    const { error } = await supabase.from("jobs").delete().eq("id", id);
+    if (error) { fetchJobs(); toast.error("删除失败"); } else { toast.success("记录已移除"); }
+  };
+
+  const processAnalysis = async (content: string, fileName?: string) => {
+    const profile = profiles.find(p => p.id === selectedProfileId);
+    if (!profile) return toast.error("请先选择或创建一个对标岗位");
     try {
-      await analyzeResume({ resumeText: resume, position: selectedProfile.name, jobRequirements: selectedProfile.requirements, userId: user.id });
-      toast.success("分析任务已提交");
-      setResume("");
+      await analyzeResume({ 
+        resumeText: content, 
+        position: profile.name, 
+        jobRequirements: profile.requirements, 
+        userId: user.id 
+      });
     } catch (e) {
-      toast.error("提交失败");
-    } finally {
-      setLoading(false);
+      toast.error(fileName ? `${fileName} 处理失败` : "分析任务提交失败");
     }
+  };
+
+  const handleBatchFiles = async (files: FileList | File[]) => {
+    setLoading(true);
+    const fileArray = Array.from(files);
+    toast.info(`流水线启动：正在处理 ${fileArray.length} 份文件...`);
+    for (const file of fileArray) {
+      const text = await file.text();
+      await processAnalysis(text, file.name);
+    }
+    setLoading(false);
+    toast.success("所有简历已提交 AI 处理");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleManualSubmit = async () => {
+    if (!resume.trim()) return toast.error("请粘贴简历内容或拖入文件");
+    setLoading(true);
+    await processAnalysis(resume);
+    setResume("");
+    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#f9fafb]">
-      {/* 导航栏：仅更换图标 */}
-      <nav className="border-b bg-white p-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
-        <h1 className="font-bold text-xl flex items-center gap-2 text-zinc-900">
-          <FileSearch className="w-6 h-6 text-blue-600" /> AI Resume Reviewer
-        </h1>
-
+    <div className="min-h-screen bg-[#f8fafc] selection:bg-blue-100">
+      <nav className="border-b bg-white/80 backdrop-blur-md p-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-200"><FileSearch className="w-6 h-6 text-white" /></div>
+          <div>
+            <h1 className="font-bold text-xl text-slate-900 tracking-tight">AI Resume Reviewer</h1>
+            <p className="text-[10px] text-blue-600 font-bold flex items-center gap-1 uppercase tracking-widest"><Cpu className="w-3 h-3" /> Gemini Pipeline</p>
+          </div>
+        </div>
         <div className="flex items-center gap-4">
           {user && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-zinc-50 border border-zinc-100 rounded-full">
-              <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                <User className="w-3 h-3 text-blue-600" />
-              </div>
-              <span className="text-xs font-bold text-zinc-700 max-w-[250px] truncate">{user.email}</span>
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-full shadow-sm">
+              <User className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-xs font-semibold text-slate-600 truncate max-w-[200px]">{user.email}</span>
             </div>
           )}
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="hover:bg-red-50 hover:text-red-600 transition-colors" 
-            onClick={async () => { await supabase.auth.signOut(); window.location.href = "/"; }}
-          >
+          <Button variant="ghost" size="sm" className="hover:bg-red-50 hover:text-red-600" onClick={async () => { await supabase.auth.signOut(); window.location.href = "/"; }}>
             <LogOut className="w-4 h-4 mr-2" /> 退出
           </Button>
         </div>
       </nav>
 
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* 左侧控制区 */}
         <div className="lg:col-span-5 space-y-6">
-          <Card className="border border-zinc-200/60 shadow-sm bg-white overflow-hidden">
-            <CardHeader className="border-b border-zinc-100 pb-4 bg-zinc-50/50">
+          <Card className="border-slate-200 shadow-sm overflow-hidden">
+            <CardHeader className="border-b border-slate-100 pb-4 bg-slate-50/50">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <Target className="w-5 h-5 text-blue-600" />
-                  <CardTitle className="text-base font-bold text-zinc-800">岗位画像定义</CardTitle>
+                  <CardTitle className="text-base font-bold text-slate-800">岗位画像定义</CardTitle>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 text-xs font-semibold" onClick={() => { setIsAddingProfile(!isAddingProfile); setEditingProfileId(null); setNewProfileName(""); setNewProfileReq(""); }}>
+                <Button variant="outline" size="sm" onClick={() => { setIsAddingProfile(!isAddingProfile); setEditingProfileId(null); setNewProfileName(""); setNewProfileReq(""); }}>
                   {isAddingProfile ? "取消" : <PlusCircle className="w-4 h-4 mr-1" />}
                 </Button>
               </div>
             </CardHeader>
             <CardContent className="pt-6">
               {isAddingProfile ? (
-                <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                  <input placeholder="岗位名称 (例如: Data Analyst)" className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />
-                  <Textarea placeholder="输入岗位要求..." className="h-32 text-sm bg-zinc-50 border-zinc-200" value={newProfileReq} onChange={(e) => setNewProfileReq(e.target.value)} />
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-bold" onClick={handleSaveProfile}>{editingProfileId ? "确认更新" : "保存画像"}</Button>
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <p className="text-[10px] font-bold text-blue-600 uppercase flex items-center gap-1"><Sparkles className="w-3 h-3" /> {editingProfileId ? "正在重校画像" : "定义新标准"}</p>
+                  <input placeholder="岗位名称 (如: Senior Data Analyst)" className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />
+                  <Textarea placeholder="输入画像具体对标要求..." className="h-32 text-sm border-slate-200" value={newProfileReq} onChange={(e) => setNewProfileReq(e.target.value)} />
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-bold" onClick={handleSaveProfile}>确认并保存</Button>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                        <SelectTrigger className="h-11 border-zinc-200 w-full bg-white font-medium"><SelectValue placeholder="选择目标画像" /></SelectTrigger>
-                        <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
+                    <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
+                      <SelectTrigger className="h-11 border-slate-200 w-full"><SelectValue placeholder="请选择对标岗位画像" /></SelectTrigger>
+                      <SelectContent>{profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                    </Select>
                     {selectedProfileId && (
-                      <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 border-zinc-200 hover:text-blue-600 shadow-sm" onClick={() => startEditing(selectedProfileId)}>
-                        <Edit3 className="w-4 h-4" />
-                      </Button>
+                      <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 border-slate-200 hover:text-blue-600" onClick={() => {
+                        const p = profiles.find(x => x.id === selectedProfileId);
+                        if(p) { setEditingProfileId(p.id); setNewProfileName(p.name); setNewProfileReq(p.requirements); setIsAddingProfile(true); }
+                      }}><Edit3 className="w-4 h-4" /></Button>
                     )}
                   </div>
-                  {selectedProfileId && (
-                    <div className="p-4 bg-blue-50/40 border border-blue-100 rounded-xl text-[11px] text-blue-700">
-                      <p className="font-bold mb-1 flex items-center gap-1">核心要求预览：</p>
-                      <p className="opacity-80 line-clamp-3 leading-relaxed italic">{profiles.find(p => p.id === selectedProfileId)?.requirements}</p>
-                    </div>
-                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border border-zinc-200/60 shadow-sm bg-white">
-            <CardHeader className="border-b border-zinc-100 pb-3">
+          {/* 全能魔术框：支持点击、粘贴、拖拽 */}
+          <Card 
+            className={`border-2 transition-all duration-300 relative group ${isDragging ? 'border-blue-500 bg-blue-50/50 scale-[1.01]' : 'border-slate-200 bg-white shadow-sm'}`}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={async (e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) await handleBatchFiles(e.dataTransfer.files); }}
+          >
+            <CardHeader className="border-b border-slate-100 pb-3 flex flex-row items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-zinc-600" />
-                <CardTitle className="text-base font-bold text-zinc-800">简历原文内容</CardTitle>
+                <FileText className="w-5 h-5 text-blue-600" />
+                <CardTitle className="text-base font-bold text-slate-800">简历原文内容</CardTitle>
               </div>
+              <input type="file" ref={fileInputRef} className="hidden" multiple accept=".pdf,.txt" onChange={(e) => e.target.files && handleBatchFiles(e.target.files)} />
+              <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold text-blue-600 uppercase" onClick={() => fileInputRef.current?.click()}>
+                <UploadCloud className="w-3.5 h-3.5 mr-1" /> 批量上传
+              </Button>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
-              <Textarea placeholder="在此粘贴简历全文..." className="h-[400px] bg-zinc-50/50 resize-none text-sm border-zinc-200" value={resume} onChange={(e) => setResume(e.target.value)} />
-              <Button className="w-full bg-zinc-900 hover:bg-zinc-800 h-12 text-lg font-black tracking-wide shadow-lg" onClick={handleSubmit} disabled={loading || !selectedProfileId}>
-                {loading ? <><Loader2 className="mr-2 animate-spin" />ANALYZING...</> : <><Send className="mr-2 w-5 h-5" />EXECUTE ANALYSIS</>}
+              <div className="relative">
+                {isDragging && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-blue-600/10 backdrop-blur-[2px] rounded-lg border-2 border-blue-500 border-dashed animate-in fade-in">
+                    <UploadCloud className="w-12 h-12 text-blue-600 animate-bounce" />
+                    <p className="text-blue-700 font-bold mt-2 tracking-widest uppercase text-xs">Drop to Process</p>
+                  </div>
+                )}
+                <Textarea 
+                  placeholder="在此直接粘贴，或拖拽多个简历文件到此处..." 
+                  className="h-[400px] bg-transparent resize-none text-sm border-slate-200 focus:ring-2 focus:ring-blue-500/20 custom-scrollbar" 
+                  value={resume} 
+                  onChange={(e) => setResume(e.target.value)} 
+                />
+              </div>
+              <Button className="w-full bg-slate-900 hover:bg-slate-800 h-12 text-lg font-black shadow-lg transition-all active:scale-[0.98]" onClick={handleManualSubmit} disabled={loading || !selectedProfileId}>
+                {loading ? <><Loader2 className="mr-2 animate-spin" />正在流水线扫描...</> : <><Send className="mr-2 w-5 h-5" />开启 AI 评估</>}
               </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* 右侧：分析历史 */}
         <div className="lg:col-span-7 flex flex-col h-full">
-          <div className="flex items-center justify-between mb-4 px-1">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-zinc-400" />
-              <h2 className="font-bold text-zinc-500 uppercase tracking-widest text-[10px]">ANALYSIS HISTORY</h2>
-            </div>
+          <div className="flex items-center justify-between mb-4 px-1 uppercase tracking-widest text-[10px] font-bold text-slate-400">
+            <div className="flex items-center gap-2"><History className="w-4 h-4" /> Analysis Pipeline</div>
+            <div className="bg-slate-100 px-2 py-0.5 rounded-full">{jobs.length} Records</div>
           </div>
           
-          <div className="space-y-6 lg:h-[835px] overflow-y-auto pr-3 pb-10 custom-scrollbar scroll-smooth">
+          <div className="space-y-6 lg:h-[845px] overflow-y-auto pr-2 pb-10 custom-scrollbar">
             {jobs.map((job) => {
               const res = job.result || {};
               const isMatch = res.hire_recommendation === 'yes';
-              const isConfirming = deletingId === job.id;
               const isExpanded = expandedIds.has(job.id);
+              const isConfirming = deletingId === job.id;
 
               return (
-                <Card key={job.id} className={`group border shadow-sm transition-all duration-300 overflow-hidden relative ${isConfirming ? 'border-red-500 ring-2 ring-red-100 scale-[0.98]' : 'border-zinc-200/70 bg-white hover:shadow-md hover:-translate-y-1'}`}>
-                  {/* 内联删除 */}
-                  <div className="absolute top-4 right-4 z-10">
+                <Card key={job.id} className={`group border transition-all duration-300 relative ${isConfirming ? 'border-red-500 scale-[0.98] shadow-lg' : 'border-slate-200 bg-white hover:border-blue-200 hover:shadow-md'}`}>
+                  <div className="absolute top-4 right-4 z-20">
                     {isConfirming ? (
                       <div className="flex gap-1 animate-in slide-in-from-right-2">
-                        <Button size="sm" variant="destructive" className="h-7 text-[10px] font-bold" onClick={() => executeDelete(job.id)}>确认删除</Button>
+                        <Button size="sm" variant="destructive" className="h-7 text-[10px] font-bold" onClick={() => executeDelete(job.id)}>确认</Button>
                         <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => setDeletingId(null)}>取消</Button>
                       </div>
                     ) : (
-                      <button onClick={() => setDeletingId(job.id)} className="p-2 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => setDeletingId(job.id)} className="p-2 text-slate-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
                     )}
                   </div>
 
-                  <CardContent className={`pt-6 transition-opacity ${isConfirming ? 'opacity-40 grayscale' : 'opacity-100'}`}>
+                  <CardContent className={`pt-6 ${isConfirming ? 'opacity-30 grayscale' : 'opacity-100'}`}>
                     <div className="flex justify-between items-start mb-6 pr-12">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                          <h3 className="font-black text-lg text-zinc-800 uppercase tracking-tight">{job.position}</h3>
+                      <div className="space-y-1">
+                        <h3 className="font-black text-2xl text-slate-800 uppercase tracking-tight">{res.name || "未提取姓名"}</h3>
+                        <div className="flex flex-wrap gap-4 text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                          <span className="flex items-center gap-1"><Target className="w-3 h-3" /> {job.position}</span>
+                          <button onClick={() => copyToClipboard(res.email, "邮箱")} className="flex items-center gap-1 hover:text-blue-600"><Mail className="w-3 h-3" /> {res.email || "N/A"}</button>
+                          <button onClick={() => copyToClipboard(res.phone, "电话")} className="flex items-center gap-1 hover:text-blue-600"><Phone className="w-3 h-3" /> {res.phone || "N/A"}</button>
                         </div>
-                        <p className="text-[10px] text-zinc-400 font-mono">TS: {new Date(job.created_at).toLocaleString('zh-CN', { hour12: false })}</p>
                       </div>
-                      <div className={`p-2 rounded-full ${isMatch ? 'bg-green-50' : 'bg-red-50'}`}>
-                         {isMatch ? <CheckCircle2 className="text-green-500 w-5 h-5" /> : <XCircle className="text-red-500 w-5 h-5" />}
+                      <div className={`p-2 rounded-full ${isMatch ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                         {isMatch ? <CheckCircle2 className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
                       </div>
                     </div>
                     
                     <div className="grid grid-cols-1 gap-4">
-                      <div className={`p-5 rounded-2xl border transition-all duration-300 ${isMatch ? 'bg-green-50/40 border-green-100/50 text-green-900' : 'bg-red-50/40 border-red-100/50 text-red-900'}`}>
-                        <p className="text-[9px] font-bold uppercase tracking-widest mb-1 opacity-60">录取建议</p>
-                        <p className="text-2xl font-black mb-4">{isMatch ? '✅ 建议安排面试' : '⚪ 暂不匹配岗位'}</p>
-                        {(res.highlights || []).length > 0 && (
-                          <div className={`pt-4 border-t ${isMatch ? 'border-green-200/50' : 'border-red-200/50'}`}>
-                            <p className="text-[9px] font-bold uppercase tracking-widest mb-2 opacity-60">{isMatch ? '核心匹配亮点' : '简历重点分析'}</p>
-                            <ul className="space-y-2.5">
-                              {res.highlights.map((h: string, i: number) => (
-                                <li key={i} className="flex items-start gap-2.5 text-sm font-semibold leading-snug">
-                                  <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isMatch ? 'bg-green-500' : 'bg-red-500'}`} />{h}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-5 bg-zinc-50 border border-zinc-100 rounded-2xl">
-                        <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-3">AI 风险评估提示</p>
-                        <ul className="space-y-2.5 text-sm text-zinc-600 font-medium">
-                          {(res.risks || ["Passed screening."]).map((r: string, i: number) => (
-                            <li key={i} className="flex items-start gap-2.5 leading-relaxed"><div className="w-1.5 h-1.5 bg-zinc-300 rounded-full mt-1.5 shrink-0" />{r}</li>
+                      <div className={`p-5 rounded-2xl border transition-all duration-500 ${isMatch ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+                        <p className="text-[9px] font-black uppercase mb-3 opacity-50 tracking-widest">{isMatch ? 'Match Highlights' : 'Resume Focus'}</p>
+                        <ul className="space-y-3">
+                          {(res.highlights || []).map((h: string, i: number) => (
+                            <li key={i} className="flex items-start gap-2.5 text-sm font-semibold leading-snug">
+                              <span className={`w-1.5 h-1.5 rounded-full mt-2 shrink-0 ${isMatch ? 'bg-green-500' : 'bg-red-500'}`} />{h}
+                            </li>
                           ))}
                         </ul>
                       </div>
-                      <div className="border-t border-zinc-100 pt-2">
-                        <button onClick={() => toggleExpand(job.id)} className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-blue-600 transition-colors py-2 font-bold uppercase">
+                      <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl shadow-inner-sm">
+                        <p className="text-[9px] font-black text-slate-400 uppercase mb-3 tracking-widest">Risk Assessment</p>
+                        <ul className="space-y-2.5 text-sm text-slate-600 font-medium leading-relaxed">
+                          {(res.risks || ["No major risks found."]).map((r: string, i: number) => (
+                            <li key={i} className="flex items-start gap-2.5"><span className="w-1.5 h-1.5 bg-slate-300 rounded-full mt-2 shrink-0" />{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="border-t border-slate-100 pt-3">
+                        <button onClick={() => toggleExpand(job.id)} className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase transition-colors">
                           {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                          {isExpanded ? "隐藏简历原文" : "查看原始简历备份"}
+                          {isExpanded ? "Hide Source" : "Review Source"}
                         </button>
-                        {isExpanded && <div className="mt-2 p-4 bg-zinc-50 rounded-xl text-[10px] text-zinc-500 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto border border-zinc-100">{job.resume_text}</div>}
+                        {isExpanded && <div className="mt-3 p-4 bg-slate-100 rounded-xl text-[10px] text-slate-500 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed animate-in slide-in-from-top-1">{job.resume_text}</div>}
                       </div>
                     </div>
                   </CardContent>
