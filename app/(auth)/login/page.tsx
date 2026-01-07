@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner"; // 使用我们刚安装的 Sonner
+import { toast } from "sonner"; 
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -18,29 +18,39 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     
-    // 尝试登录
-    const { error } = await supabase.auth.signInWithPassword({
+    // 1. 尝试登录
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      // 如果登录失败，尝试自动注册（MVP 极速逻辑）
-      const { error: signUpError } = await supabase.auth.signUp({
+    if (signInError) {
+      // 2. 如果登录失败（通常是账号不存在），尝试自动注册
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
       });
       
       if (signUpError) {
+        // 如果是真正的错误（如密码太短），显示错误信息
         toast.error("认证失败", { description: signUpError.message });
+      } else if (signUpData.session) {
+        // ⭐ 关键改进：如果关闭了邮件验证，signUp 会立即返回 session
+        // 意味着账号创建的同时已经登录成功，直接跳转
+        toast.success("账号已创建并自动登录！");
+        router.push("/app"); 
+        router.refresh(); 
       } else {
-        toast.success("注册成功！", { description: "请查看邮箱确认或直接尝试再次登录。" });
+        // 极端兜底逻辑：如果后台配置未生效导致没有 session
+        toast.info("账号已创建", { description: "请尝试再次输入密码登录。" });
       }
-    } else {
-      toast.success("登录成功！");
-      router.push("/app"); // 登录成功跳转到功能页
-      router.refresh(); // 刷新路由状态
+    } else if (signInData.session) {
+      // 3. 已经是老用户，登录成功直接跳转
+      toast.success("欢迎回来！");
+      router.push("/app"); 
+      router.refresh(); 
     }
+
     setLoading(false);
   };
 
@@ -74,7 +84,7 @@ export default function LoginPage() {
               />
             </div>
             <Button className="w-full" type="submit" disabled={loading}>
-              {loading ? "请稍候..." : "进入系统"}
+              {loading ? "正在进入系统..." : "进入系统"}
             </Button>
           </form>
         </CardContent>
@@ -82,9 +92,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
-
-
-
-
-
