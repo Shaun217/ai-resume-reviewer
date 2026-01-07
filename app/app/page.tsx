@@ -34,9 +34,8 @@ export default function AppPage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ---------------- 修复后的核心函数 ----------------
+  // ---------------- 核心逻辑函数 ----------------
 
-  // 修复 toggleExpand：使用函数式更新防止状态冲突
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -46,7 +45,6 @@ export default function AppPage() {
     });
   };
 
-  // 修复 handleSaveProfile：确保逻辑闭环与权限校验
   const handleSaveProfile = async () => {
     if (!newProfileName.trim() || !newProfileReq.trim()) {
       return toast.error("请填写完整的岗位名称和要求");
@@ -55,7 +53,6 @@ export default function AppPage() {
 
     try {
       if (editingProfileId) {
-        // 更新逻辑
         const { error } = await supabase
           .from("job_profiles")
           .update({ name: newProfileName, requirements: newProfileReq })
@@ -64,7 +61,6 @@ export default function AppPage() {
         if (error) throw error;
         toast.success("岗位画像更新成功");
       } else {
-        // 新增逻辑
         const { data, error } = await supabase
           .from("job_profiles")
           .insert([{ name: newProfileName, requirements: newProfileReq, user_id: user.id }])
@@ -76,19 +72,16 @@ export default function AppPage() {
         toast.success("新岗位画像已存入云端");
       }
 
-      // 重置所有输入状态
       setIsAddingProfile(false);
       setEditingProfileId(null);
       setNewProfileName("");
       setNewProfileReq("");
-      fetchProfiles(); // 刷新列表
+      fetchProfiles();
     } catch (e: any) {
       console.error(e);
       toast.error(e.message || "保存失败，请检查权限");
     }
   };
-
-  // ---------------- 其他功能函数 ----------------
 
   const fetchJobs = async () => {
     const { data } = await supabase.from("jobs").select("*").not("result", "is", null).order("created_at", { ascending: false });
@@ -158,8 +151,11 @@ export default function AppPage() {
     setLoading(false);
   };
 
+  // ---------------- 渲染部分 ----------------
+
   return (
     <div className="min-h-screen bg-[#f8fafc] selection:bg-blue-100">
+      {/* 导航栏 */}
       <nav className="border-b bg-white/80 backdrop-blur-md p-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-200"><FileSearch className="w-6 h-6 text-white" /></div>
@@ -182,6 +178,7 @@ export default function AppPage() {
       </nav>
 
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* 左侧配置与输入区 */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="border-slate-200 shadow-sm overflow-hidden">
             <CardHeader className="border-b border-slate-100 pb-4 bg-slate-50/50">
@@ -222,13 +219,51 @@ export default function AppPage() {
             </CardContent>
           </Card>
 
-          {/* 全能魔术框：支持点击、粘贴、拖拽 */}
+          {/* ✨ 修复后的魔术框 ✨ */}
           <Card 
-            className={`border-2 transition-all duration-300 relative group ${isDragging ? 'border-blue-500 bg-blue-50/50 scale-[1.01]' : 'border-slate-200 bg-white shadow-sm'}`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={async (e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files) await handleBatchFiles(e.dataTransfer.files); }}
+            className={`border-2 transition-all duration-300 relative group 
+              ${isDragging ? 'border-blue-500 bg-blue-50/50 scale-[1.01]' : 'border-slate-200 bg-white shadow-sm'}
+              ${isDragging ? '[&>*]:pointer-events-none' : ''} 
+            `}
+            onDragOver={(e) => { 
+              e.preventDefault(); 
+              e.stopPropagation(); 
+              if (!isDragging) setIsDragging(true); 
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragging(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // 只有当鼠标真正离开 Card 边界时才关闭
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (
+                e.clientX <= rect.left || e.clientX >= rect.right ||
+                e.clientY <= rect.top || e.clientY >= rect.bottom
+              ) {
+                setIsDragging(false);
+              }
+            }}
+            onDrop={async (e) => { 
+              e.preventDefault(); 
+              e.stopPropagation();
+              setIsDragging(false); 
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                await handleBatchFiles(e.dataTransfer.files); 
+              }
+            }}
           >
+            {/* 拖拽状态覆盖层 */}
+            {isDragging && (
+              <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-blue-600/10 backdrop-blur-[2px] rounded-lg border-2 border-blue-500 border-dashed animate-in fade-in duration-200">
+                <UploadCloud className="w-12 h-12 text-blue-600 animate-bounce" />
+                <p className="text-blue-700 font-bold mt-2 tracking-widest uppercase text-xs">松开即刻开始 AI 扫描</p>
+              </div>
+            )}
+
             <CardHeader className="border-b border-slate-100 pb-3 flex flex-row items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="w-5 h-5 text-blue-600" />
@@ -240,20 +275,12 @@ export default function AppPage() {
               </Button>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
-              <div className="relative">
-                {isDragging && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-blue-600/10 backdrop-blur-[2px] rounded-lg border-2 border-blue-500 border-dashed animate-in fade-in">
-                    <UploadCloud className="w-12 h-12 text-blue-600 animate-bounce" />
-                    <p className="text-blue-700 font-bold mt-2 tracking-widest uppercase text-xs">Drop to Process</p>
-                  </div>
-                )}
-                <Textarea 
-                  placeholder="在此直接粘贴，或拖拽多个简历文件到此处..." 
-                  className="h-[400px] bg-transparent resize-none text-sm border-slate-200 focus:ring-2 focus:ring-blue-500/20 custom-scrollbar" 
-                  value={resume} 
-                  onChange={(e) => setResume(e.target.value)} 
-                />
-              </div>
+              <Textarea 
+                placeholder="在此直接粘贴，或拖拽多个简历文件到此处..." 
+                className="h-[400px] bg-transparent resize-none text-sm border-slate-200 focus:ring-2 focus:ring-blue-500/20 custom-scrollbar" 
+                value={resume} 
+                onChange={(e) => setResume(e.target.value)} 
+              />
               <Button className="w-full bg-slate-900 hover:bg-slate-800 h-12 text-lg font-black shadow-lg transition-all active:scale-[0.98]" onClick={handleManualSubmit} disabled={loading || !selectedProfileId}>
                 {loading ? <><Loader2 className="mr-2 animate-spin" />正在流水线扫描...</> : <><Send className="mr-2 w-5 h-5" />开启 AI 评估</>}
               </Button>
@@ -261,6 +288,7 @@ export default function AppPage() {
           </Card>
         </div>
 
+        {/* 右侧结果展示区 */}
         <div className="lg:col-span-7 flex flex-col h-full">
           <div className="flex items-center justify-between mb-4 px-1 uppercase tracking-widest text-[10px] font-bold text-slate-400">
             <div className="flex items-center gap-2"><History className="w-4 h-4" /> Analysis Pipeline</div>
