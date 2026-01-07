@@ -31,7 +31,7 @@ export default function AppPage() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     fetchJobs();
 
-    // 实时订阅：数据库有更新时自动刷新列表
+    // 实时订阅
     const channel = supabase.channel("jobs_sync")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "jobs" }, () => {
         fetchJobs(); 
@@ -43,13 +43,9 @@ export default function AppPage() {
 
   const handleSubmit = async () => {
     if (!resume.trim()) return toast.error("请输入简历内容");
-    
     setLoading(true);
-    
     try {
-      // 触发 AI 分析并等待返回
       await analyzeResume({ resumeText: resume, position, userId: user.id });
-      
       toast.success("分析成功！");
       setResume("");
       fetchJobs(); 
@@ -63,6 +59,7 @@ export default function AppPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
+      {/* 顶部导航 */}
       <nav className="border-b bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-20">
         <h1 className="font-bold text-xl text-zinc-900 flex items-center gap-2">
           <div className="w-2 h-6 bg-blue-600 rounded-full" /> AI Resume Reviewer
@@ -72,8 +69,10 @@ export default function AppPage() {
         </Button>
       </nav>
 
+      {/* 主内容区 */}
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* 左侧输入控制区 */}
+        
+        {/* 左侧输入控制区 (占 5 列) */}
         <div className="lg:col-span-5 space-y-4">
           <Card className="border-none shadow-md">
             <CardHeader>
@@ -89,15 +88,19 @@ export default function AppPage() {
                   <SelectItem value="数据分析师">数据分析师</SelectItem>
                 </SelectContent>
               </Select>
-              // 在 app/app/page.tsx 中找到对应的 Textarea
+
               <Textarea 
                 placeholder="在此粘贴简历全文内容..." 
-                // 修改这里：将 min-h 改为 h，并确保有 resize-none
-                className="h-[400px] bg-zinc-50/50 resize-none" 
+                className="h-[400px] bg-zinc-50/50 resize-none font-sans text-sm" 
                 value={resume}
                 onChange={(e) => setResume(e.target.value)}
               />
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-lg font-bold" onClick={handleSubmit} disabled={loading}>
+
+              <Button 
+                className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-lg font-bold transition-all" 
+                onClick={handleSubmit} 
+                disabled={loading}
+              >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 animate-spin" />
@@ -114,12 +117,13 @@ export default function AppPage() {
           </Card>
         </div>
 
-        {/* 右侧结果展示区 */}
+        {/* 右侧结果展示区 (占 7 列) */}
         <div className="lg:col-span-7 space-y-4">
           <h2 className="font-bold text-zinc-500 flex items-center gap-2 uppercase tracking-wider text-sm">
             <History className="w-4 h-4" /> 分析历史
           </h2>
-          <div className="space-y-6 max-h-[85vh] overflow-y-auto pr-2 pb-10 custom-scrollbar">
+          
+          <div className="space-y-6 max-h-[85vh] overflow-y-auto pr-2 pb-10">
             {jobs.map((job) => {
               const isHero = job.result?.hire_recommendation === 'yes';
               
@@ -146,7 +150,7 @@ export default function AppPage() {
                           {isHero ? '建议安排面试' : '暂不匹配岗位'}
                         </p>
                         
-                        {/* 简历亮点总结 */}
+                        {/* 简历亮点展示 */}
                         {job.result?.highlights && (
                           <div className={`pt-4 border-t ${isHero ? 'border-green-200' : 'border-red-200'}`}>
                             <p className="text-[10px] font-bold uppercase tracking-wider mb-2 opacity-60">简历亮点 (TOP 3)</p>
