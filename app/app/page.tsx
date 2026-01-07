@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Send, History, LogOut, CheckCircle2, ChevronDown, ChevronUp, PlusCircle, Briefcase, FileText, Edit2 } from "lucide-react";
+import { Loader2, Send, History, LogOut, CheckCircle2, ChevronDown, ChevronUp, PlusCircle, Target, FileText, Edit3, Sparkles } from "lucide-react";
 
 export default function AppPage() {
   const [user, setUser] = useState<any>(null);
@@ -21,7 +21,7 @@ export default function AppPage() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string>("");
   const [isAddingProfile, setIsAddingProfile] = useState(false);
-  const [editingProfileId, setEditingProfileId] = useState<string | null>(null); // ⭐ 新增：记录正在编辑的岗位ID
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileReq, setNewProfileReq] = useState("");
 
@@ -55,7 +55,6 @@ export default function AppPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ⭐ 新增：进入编辑模式
   const startEditing = () => {
     const profile = profiles.find(p => p.id === selectedProfileId);
     if (profile) {
@@ -66,12 +65,10 @@ export default function AppPage() {
     }
   };
 
-  // ⭐ 修改：统一处理保存和更新
   const handleSaveProfile = async () => {
     if (!newProfileName || !newProfileReq) return toast.error("请填写完整岗位信息");
 
     if (editingProfileId) {
-      // 执行更新逻辑
       const { error } = await supabase
         .from("job_profiles")
         .update({ name: newProfileName, requirements: newProfileReq })
@@ -80,7 +77,6 @@ export default function AppPage() {
       if (error) return toast.error("更新失败");
       toast.success("岗位画像已更新");
     } else {
-      // 执行新增逻辑
       const { data, error } = await supabase.from("job_profiles").insert([
         { name: newProfileName, requirements: newProfileReq, user_id: user.id }
       ]).select().single();
@@ -90,7 +86,6 @@ export default function AppPage() {
       toast.success("岗位画像已保存");
     }
 
-    // 重置状态
     fetchProfiles();
     setIsAddingProfile(false);
     setEditingProfileId(null);
@@ -132,18 +127,18 @@ export default function AppPage() {
       </nav>
 
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* 左侧控制区 */}
         <div className="lg:col-span-5 space-y-6">
+          {/* 岗位画像定义卡片 - 已优化图标与标题 */}
           <Card className="border-none shadow-sm ring-1 ring-zinc-200">
             <CardHeader className="border-b border-zinc-100 pb-4">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-2">
-                  <Briefcase className="w-5 h-5 text-blue-600" />
-                  <CardTitle className="text-lg">岗位画像画像</CardTitle>
+                  <Target className="w-5 h-5 text-blue-600" />
+                  <CardTitle className="text-lg">岗位画像定义</CardTitle>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => {
                   setIsAddingProfile(!isAddingProfile);
-                  setEditingProfileId(null); // 关闭编辑状态
+                  setEditingProfileId(null);
                   setNewProfileName("");
                   setNewProfileReq("");
                 }}>
@@ -153,11 +148,13 @@ export default function AppPage() {
             </CardHeader>
             <CardContent className="pt-6">
               {isAddingProfile ? (
-                <div className="space-y-3">
-                  <p className="text-xs font-bold text-blue-600 uppercase">{editingProfileId ? "正在修改岗位" : "新增岗位画像"}</p>
+                <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> {editingProfileId ? "正在编辑当前画像" : "定义新岗位画像"}
+                  </p>
                   <input 
-                    placeholder="岗位名称 (例如: 数据分析师)" 
-                    className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder="岗位名称 (例如: 高级数据分析师)" 
+                    className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
                   />
@@ -167,30 +164,40 @@ export default function AppPage() {
                     value={newProfileReq}
                     onChange={(e) => setNewProfileReq(e.target.value)}
                   />
-                  <Button className="w-full bg-blue-600" onClick={handleSaveProfile}>
-                    {editingProfileId ? "确认更新画像" : "保存画像模板"}
+                  <Button className="w-full bg-blue-600 hover:bg-blue-700 h-11" onClick={handleSaveProfile}>
+                    {editingProfileId ? "更新画像数据" : "保存至画像库"}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                      <SelectTrigger className="h-11 border-zinc-200 flex-1"><SelectValue placeholder="选择目标岗位画像" /></SelectTrigger>
-                      <SelectContent>
-                        {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    {/* ⭐ 编辑按钮：只有选中岗位后才显示 */}
+                  {/* ⭐ 优化后的编辑按钮位置与大小对齐逻辑 */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
+                        <SelectTrigger className="h-11 border-zinc-200 w-full bg-white shadow-sm">
+                          <SelectValue placeholder="选择目标岗位画像" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {profiles.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     {selectedProfileId && (
-                      <Button variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={startEditing}>
-                        <Edit2 className="w-4 h-4 text-zinc-500" />
+                      <Button 
+                        variant="outline" 
+                        size="icon" 
+                        className="h-11 w-11 shrink-0 border-zinc-200 hover:bg-zinc-50 hover:text-blue-600 transition-colors shadow-sm" 
+                        onClick={startEditing}
+                        title="编辑此画像"
+                      >
+                        <Edit3 className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
                   {selectedProfileId && (
-                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-blue-700">
-                      <p className="font-bold mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> 当前选定画像要求：</p>
-                      <p className="opacity-80 line-clamp-3">{profiles.find(p => p.id === selectedProfileId)?.requirements}</p>
+                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-blue-700 animate-in fade-in slide-in-from-top-1">
+                      <p className="font-bold mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> 当前画像要求预览：</p>
+                      <p className="opacity-80 line-clamp-3 leading-relaxed">{profiles.find(p => p.id === selectedProfileId)?.requirements}</p>
                     </div>
                   )}
                 </div>
@@ -199,22 +206,21 @@ export default function AppPage() {
           </Card>
 
           <Card className="border-none shadow-sm ring-1 ring-zinc-200">
-            <CardHeader className="pb-3"><CardTitle className="text-lg text-zinc-800">简历原文</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-lg text-zinc-800">简历原文内容</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <Textarea 
-                placeholder="粘贴简历文本..." 
-                className="h-[400px] bg-zinc-50/50 resize-none text-sm border-zinc-200"
+                placeholder="在此粘贴简历文本..." 
+                className="h-[400px] bg-zinc-50/50 resize-none text-sm border-zinc-200 focus:ring-2 focus:ring-blue-500/20"
                 value={resume}
                 onChange={(e) => setResume(e.target.value)}
               />
-              <Button className="w-full bg-zinc-900 hover:bg-zinc-800 h-12 text-lg font-bold" onClick={handleSubmit} disabled={loading || !selectedProfileId}>
-                {loading ? <><Loader2 className="mr-2 animate-spin" />分析中...</> : <><Send className="mr-2 w-5 h-5" />开始 AI 分析</>}
+              <Button className="w-full bg-zinc-900 hover:bg-zinc-800 h-12 text-lg font-bold shadow-lg" onClick={handleSubmit} disabled={loading || !selectedProfileId}>
+                {loading ? <><Loader2 className="mr-2 animate-spin" />深度分析中...</> : <><Send className="mr-2 w-5 h-5" />开始 AI 分析评估</>}
               </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* 右侧结果（保持之前的逻辑） */}
         <div className="lg:col-span-7 space-y-4">
           <h2 className="font-bold text-zinc-500 flex items-center gap-2 uppercase tracking-wider text-xs">
             <History className="w-4 h-4" /> 分析历史记录
@@ -260,7 +266,7 @@ export default function AppPage() {
                         <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-3">AI 风险评估提示</p>
                         <ul className="space-y-2">
                           {(res.risks || ["暂无明显硬性风险点"]).map((r: string, i: number) => (
-                            <li key={i} className="text-sm text-zinc-600 flex items-start gap-2">
+                            <li key={i} className="text-sm text-zinc-600 flex items-start gap-2 leading-relaxed">
                               <span className="w-1.5 h-1.5 bg-zinc-300 rounded-full mt-1.5 shrink-0" />{r}
                             </li>
                           ))}
