@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Send, History, LogOut, CheckCircle2, ChevronDown, ChevronUp, PlusCircle, Target, FileText, Edit3, Sparkles, Cpu, User } from "lucide-react";
+import { Loader2, Send, History, LogOut, CheckCircle2, XCircle, ChevronDown, ChevronUp, PlusCircle, Target, FileText, Edit3, Sparkles, Cpu, User, Trash2 } from "lucide-react";
 
 export default function AppPage() {
   const [user, setUser] = useState<any>(null);
@@ -39,6 +39,25 @@ export default function AppPage() {
   const fetchProfiles = async () => {
     const { data } = await supabase.from("job_profiles").select("*").order("created_at", { ascending: false });
     if (data) setProfiles(data);
+  };
+
+  // ⭐ 新增：物理删除分析记录
+  const handleDeleteJob = async (id: string) => {
+    if (!confirm("确定要永久删除这条分析记录吗？")) return;
+
+    // 1. 立即更新前端 UI (Optimistic Update)
+    const originalJobs = [...jobs];
+    setJobs(jobs.filter(job => job.id !== id));
+
+    // 2. 数据库同步
+    const { error } = await supabase.from("jobs").delete().eq("id", id);
+    
+    if (error) {
+      setJobs(originalJobs); // 失败则回滚
+      toast.error("删除失败，请稍后重试");
+    } else {
+      toast.success("记录已从云端移除");
+    }
   };
 
   useEffect(() => {
@@ -102,7 +121,6 @@ export default function AppPage() {
 
   return (
     <div className="min-h-screen bg-[#f9fafb] selection:bg-blue-100 selection:text-blue-700">
-      {/* 优化后的导航栏：支持显示完整邮箱 */}
       <nav className="border-b bg-white/70 backdrop-blur-md p-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -118,18 +136,14 @@ export default function AppPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          {/* ⭐ 关键修复：显示完整账号 */}
           {user && (
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-zinc-50 border border-zinc-100 rounded-full">
               <div className="w-5 h-5 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
                 <User className="w-3 h-3 text-blue-600" />
               </div>
-              <span className="text-xs font-bold text-zinc-700 max-w-[250px] truncate">
-                {user.email}
-              </span>
+              <span className="text-xs font-bold text-zinc-700 max-w-[250px] truncate">{user.email}</span>
             </div>
           )}
-          
           <Button variant="ghost" size="sm" className="hover:bg-red-50 hover:text-red-600 transition-colors" onClick={() => { supabase.auth.signOut(); window.location.href = "/"; }}>
             <LogOut className="w-4 h-4 mr-2" /> 退出
           </Button>
@@ -137,7 +151,6 @@ export default function AppPage() {
       </nav>
 
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* 左侧控制台 */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="border border-zinc-200/60 shadow-sm bg-white overflow-hidden">
             <CardHeader className="border-b border-zinc-100 pb-4 bg-zinc-50/50">
@@ -154,9 +167,7 @@ export default function AppPage() {
             <CardContent className="pt-6">
               {isAddingProfile ? (
                 <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
-                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> {editingProfileId ? "更新中..." : "定义中..."}
-                  </p>
+                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest flex items-center gap-1"><Sparkles className="w-3 h-3" /> {editingProfileId ? "更新中..." : "定义中..."}</p>
                   <input placeholder="岗位名称 (例如: Data Analyst)" className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-medium" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} />
                   <Textarea placeholder="输入该岗位的 JD 与核心技术栈要求..." className="h-32 text-sm bg-zinc-50 border-zinc-200" value={newProfileReq} onChange={(e) => setNewProfileReq(e.target.value)} />
                   <Button className="w-full bg-blue-600 hover:bg-blue-700 h-11 shadow-sm font-bold" onClick={handleSaveProfile}>{editingProfileId ? "确认更新" : "存入库"}</Button>
@@ -211,7 +222,6 @@ export default function AppPage() {
             <span className="text-[10px] text-zinc-400 font-mono tracking-tighter">{jobs.length} RECORDS SYNCED</span>
           </div>
           
-          {/* 对齐高度：lg 屏幕下固定高度 */}
           <div className="space-y-6 lg:h-[835px] overflow-y-auto pr-3 pb-10 custom-scrollbar scroll-smooth">
             {jobs.length === 0 && !loading ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-20 text-zinc-300 border-2 border-dashed border-zinc-200 rounded-2xl bg-white/30 backdrop-blur-sm">
@@ -224,9 +234,18 @@ export default function AppPage() {
                 const isMatch = res.hire_recommendation === 'yes';
                 const isExpanded = expandedIds.has(job.id);
                 return (
-                  <Card key={job.id} className="border border-zinc-200/70 shadow-sm bg-white hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden animate-in fade-in slide-in-from-right-4">
+                  <Card key={job.id} className="group border border-zinc-200/70 shadow-sm bg-white hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden animate-in fade-in slide-in-from-right-4 relative">
+                    {/* ⭐ 新增：删除按钮 (仅在悬停时更明显) */}
+                    <button 
+                      onClick={() => handleDeleteJob(job.id)}
+                      className="absolute top-4 right-4 p-2 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100 z-10"
+                      title="删除记录"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+
                     <CardContent className="pt-6">
-                      <div className="flex justify-between items-start mb-6">
+                      <div className="flex justify-between items-start mb-6 pr-8">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
@@ -236,8 +255,13 @@ export default function AppPage() {
                              TS: {new Date(job.created_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
                           </p>
                         </div>
-                        <div className={`p-2 rounded-full ${isMatch ? 'bg-green-50' : 'bg-zinc-50'}`}>
-                           <CheckCircle2 className={isMatch ? "text-green-500 w-5 h-5" : "text-zinc-300 w-5 h-5"} />
+                        {/* ⭐ 修复：不匹配显示红色叉号 */}
+                        <div className={`p-2 rounded-full ${isMatch ? 'bg-green-50' : 'bg-red-50'}`}>
+                           {isMatch ? (
+                             <CheckCircle2 className="text-green-500 w-5 h-5" />
+                           ) : (
+                             <XCircle className="text-red-500 w-5 h-5" />
+                           )}
                         </div>
                       </div>
                       
