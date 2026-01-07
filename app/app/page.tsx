@@ -31,16 +31,16 @@ export default function AppPage() {
     setExpandedIds(newIds);
   };
 
-  // 核心：获取数据并增加防御性检查
+  // 获取分析历史：按照时间倒序排列 (从近到远)
   const fetchJobs = async () => {
     const { data, error } = await supabase
       .from("jobs")
       .select("*")
       .not("result", "is", null)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }); // ⭐ 确保最新的在最上面
 
     if (error) {
-      console.error("Fetch jobs error:", error);
+      console.error("Fetch error:", error);
       return;
     }
     setJobs(data || []);
@@ -63,7 +63,7 @@ export default function AppPage() {
       }
     });
 
-    // 实时订阅：当数据库有任何更新时，自动同步列表
+    // 实时订阅：确保后端更新后右侧立即弹出
     const channel = supabase.channel("jobs_realtime_sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => {
         fetchJobs();
@@ -100,10 +100,10 @@ export default function AppPage() {
         jobRequirements: selectedProfile.requirements, 
         userId: user.id 
       });
-      toast.success("分析任务已提交至 Gemini 2.5 Flash");
+      toast.success("分析任务已提交");
       setResume("");
     } catch (e) {
-      toast.error("分析提交失败");
+      toast.error("提交失败");
     } finally {
       setLoading(false);
     }
@@ -121,9 +121,8 @@ export default function AppPage() {
       </nav>
 
       <main className="container mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* 左侧控制台 */}
+        {/* 左侧控制区 */}
         <div className="lg:col-span-5 space-y-6">
-          {/* 岗位画像配置 */}
           <Card className="border-none shadow-sm ring-1 ring-zinc-200">
             <CardHeader className="border-b border-zinc-100 pb-4">
               <div className="flex justify-between items-center">
@@ -140,7 +139,7 @@ export default function AppPage() {
               {isAddingProfile ? (
                 <div className="space-y-3">
                   <input 
-                    placeholder="岗位名称 (例如: APAC Digital Analyst)" 
+                    placeholder="岗位名称 (例如: 高级数据分析师)" 
                     className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
@@ -151,7 +150,7 @@ export default function AppPage() {
                     value={newProfileReq}
                     onChange={(e) => setNewProfileReq(e.target.value)}
                   />
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleSaveProfile}>保存画像模板</Button>
+                  <Button className="w-full bg-blue-600" onClick={handleSaveProfile}>保存画像模板</Button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -162,7 +161,7 @@ export default function AppPage() {
                     </SelectContent>
                   </Select>
                   {selectedProfileId && (
-                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-blue-700 leading-relaxed">
+                    <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl text-[11px] text-blue-700">
                       <p className="font-bold mb-1 flex items-center gap-1"><FileText className="w-3 h-3" /> 当前岗位重点要求：</p>
                       <p className="opacity-80 line-clamp-3">{profiles.find(p => p.id === selectedProfileId)?.requirements}</p>
                     </div>
@@ -172,112 +171,111 @@ export default function AppPage() {
             </CardContent>
           </Card>
 
-          {/* 简历输入 */}
           <Card className="border-none shadow-sm ring-1 ring-zinc-200">
-            <CardHeader className="pb-3"><CardTitle className="text-lg">简历原文内容</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-lg text-zinc-800">简历原文</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <Textarea 
                 placeholder="粘贴简历文本..." 
-                className="h-[380px] bg-zinc-50/50 resize-none text-sm border-zinc-200 focus:ring-2 focus:ring-blue-500/20"
+                className="h-[400px] bg-zinc-50/50 resize-none text-sm border-zinc-200"
                 value={resume}
                 onChange={(e) => setResume(e.target.value)}
               />
-              <Button 
-                className="w-full bg-zinc-900 hover:bg-zinc-800 h-12 text-lg font-bold shadow-lg disabled:opacity-50" 
-                onClick={handleSubmit} 
-                disabled={loading || !selectedProfileId}
-              >
-                {loading ? <><Loader2 className="mr-2 animate-spin" />正在深度分析画像...</> : <><Send className="mr-2 w-5 h-5" />提交 AI 评估</>}
+              <Button className="w-full bg-zinc-900 hover:bg-zinc-800 h-12 text-lg font-bold shadow-lg" onClick={handleSubmit} disabled={loading || !selectedProfileId}>
+                {loading ? <><Loader2 className="mr-2 animate-spin" />正在分析中...</> : <><Send className="mr-2 w-5 h-5" />开始 AI 分析</>}
               </Button>
             </CardContent>
           </Card>
         </div>
 
-        {/* 右侧：分析历史 */}
+        {/* 右侧结果展示区 */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-bold text-zinc-500 flex items-center gap-2 uppercase tracking-wider text-xs">
-              <History className="w-4 h-4" /> 分析历史记录
-            </h2>
-          </div>
+          <h2 className="font-bold text-zinc-500 flex items-center gap-2 uppercase tracking-wider text-xs">
+            <History className="w-4 h-4" /> 分析历史记录
+          </h2>
           
-          <div className="space-y-6 max-h-[85vh] overflow-y-auto pr-2 pb-10">
-            {jobs.length === 0 && !loading ? (
-              <div className="text-center py-20 text-zinc-300 border-2 border-dashed rounded-2xl">暂无分析历史</div>
-            ) : (
-              jobs.map((job) => {
-                const result = job.result || {};
-                const isHero = result.hire_recommendation === 'yes';
-                const isExpanded = expandedIds.has(job.id);
-                
-                return (
-                  <Card key={job.id} className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden bg-white hover:shadow-md transition-all">
-                    <CardContent className="pt-6">
-                      <div className="flex justify-between items-start mb-6">
-                        <div>
-                          <h3 className="font-bold text-xl text-zinc-800">{job.position}</h3>
-                          <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest">分析完成日期: {new Date(job.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <CheckCircle2 className={isHero ? "text-green-500 w-6 h-6" : "text-zinc-300 w-6 h-6"} />
+          <div className="space-y-6 max-h-[85vh] overflow-y-auto pr-2 pb-10 custom-scrollbar">
+            {jobs.map((job) => {
+              const res = job.result || {};
+              const isMatch = res.hire_recommendation === 'yes';
+              const isExpanded = expandedIds.has(job.id);
+              
+              return (
+                <Card key={job.id} className="border-none shadow-sm ring-1 ring-zinc-200 overflow-hidden bg-white hover:shadow-md transition-all">
+                  <CardContent className="pt-6">
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h3 className="font-bold text-xl text-zinc-800">{job.position}</h3>
+                        <p className="text-[10px] text-zinc-400 mt-1 uppercase tracking-widest">
+                          {/* ⭐ 修复：显示完整日期和时间 */}
+                          分析完成时间: {new Date(job.created_at).toLocaleString('zh-CN', {
+                            year: 'numeric', month: '2-digit', day: '2-digit',
+                            hour: '2-digit', minute: '2-digit', hour12: false
+                          })}
+                        </p>
                       </div>
+                      <CheckCircle2 className={isMatch ? "text-green-500 w-6 h-6" : "text-zinc-300 w-6 h-6"} />
+                    </div>
 
-                      <div className="grid grid-cols-1 gap-4">
-                        {/* 录取建议块 */}
-                        <div className={`p-5 rounded-2xl border transition-colors ${
-                          isHero ? 'bg-green-50/50 border-green-100 text-green-900' : 'bg-red-50/50 border-red-100 text-red-900'
-                        }`}>
-                          <p className="text-[9px] font-bold uppercase tracking-widest mb-1 opacity-60">录取建议评估</p>
-                          <p className="text-2xl font-black mb-4">
-                            {isHero ? '建议安排面试' : '暂不匹配岗位'}
-                          </p>
-                          
-                          {/* 亮点展示 */}
-                          {result.highlights && result.highlights.length > 0 && (
-                            <div className={`pt-4 border-t ${isHero ? 'border-green-200' : 'border-red-200'}`}>
-                              <p className="text-[9px] font-bold uppercase tracking-widest mb-2 opacity-60">核心匹配亮点</p>
-                              <ul className="space-y-2">
-                                {result.highlights.map((h: string, i: number) => (
-                                  <li key={i} className="flex items-start gap-2 text-sm font-medium">
-                                    <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isHero ? 'bg-green-500' : 'bg-red-500'}`} />
-                                    {h}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {/* 录取建议与亮点展示区 */}
+                      <div className={`p-5 rounded-2xl border transition-colors ${
+                        isMatch 
+                          ? 'bg-green-50/50 border-green-100 text-green-900' 
+                          : 'bg-red-50/50 border-red-100 text-red-900'
+                      }`}>
+                        <p className="text-[9px] font-bold uppercase tracking-widest mb-1 opacity-60">录取建议</p>
+                        <p className="text-2xl font-black mb-4">
+                          {isMatch ? '✅ 建议安排面试' : '⚪ 暂不匹配岗位'}
+                        </p>
                         
-                        {/* 风险点块 */}
-                        <div className="p-5 bg-zinc-50 border border-zinc-100 rounded-2xl">
-                          <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-3">AI 风险评估提示</p>
-                          <ul className="space-y-2">
-                            {(result.risks || ["未发现明显硬性不匹配点"]).map((r: string, i: number) => (
-                              <li key={i} className="text-sm text-zinc-600 flex items-start gap-2 leading-relaxed">
-                                <span className="w-1.5 h-1.5 bg-zinc-300 rounded-full mt-1.5 shrink-0" />
-                                {r}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        {/* 简历原文折叠 */}
-                        <div className="border-t border-zinc-100 pt-2">
-                          <button onClick={() => toggleExpand(job.id)} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-600 transition-colors py-2">
-                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            {isExpanded ? "隐藏原始输入文本" : "查看原始简历备份"}
-                          </button>
-                          {isExpanded && (
-                            <div className="mt-2 p-4 bg-zinc-50 rounded-xl text-[11px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto border border-zinc-100">
-                              {job.resume_text}
-                            </div>
-                          )}
-                        </div>
+                        {/* 动态标题：匹配则显示“核心匹配亮点”，不匹配则显示“简历重点分析” */}
+                        {(res.highlights || []).length > 0 && (
+                          <div className={`pt-4 border-t ${isMatch ? 'border-green-200' : 'border-red-200'}`}>
+                            <p className="text-[9px] font-bold uppercase tracking-widest mb-2 opacity-60">
+                              {isMatch ? '核心匹配亮点' : '简历重点分析'}
+                            </p>
+                            <ul className="space-y-2">
+                              {res.highlights.map((h: string, i: number) => (
+                                <li key={i} className="flex items-start gap-2 text-sm font-medium">
+                                  <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isMatch ? 'bg-green-500' : 'bg-red-500'}`} />
+                                  {h}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
-            )}
+                      
+                      {/* 风险点块 */}
+                      <div className="p-5 bg-zinc-50 border border-zinc-100 rounded-2xl">
+                        <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mb-3">AI 风险评估提示</p>
+                        <ul className="space-y-2">
+                          {(res.risks || ["暂无明显硬性风险点"]).map((r: string, i: number) => (
+                            <li key={i} className="text-sm text-zinc-600 flex items-start gap-2">
+                              <span className="w-1.5 h-1.5 bg-zinc-300 rounded-full mt-1.5 shrink-0" />
+                              {r}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* 简历原文折叠 */}
+                      <div className="border-t border-zinc-100 pt-2">
+                        <button onClick={() => toggleExpand(job.id)} className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-blue-600 py-2">
+                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {isExpanded ? "隐藏简历原文" : "查看原始简历备份"}
+                        </button>
+                        {isExpanded && (
+                          <div className="mt-2 p-4 bg-zinc-50 rounded-xl text-[11px] text-zinc-500 font-mono whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto border border-zinc-100">
+                            {job.resume_text}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       </main>
