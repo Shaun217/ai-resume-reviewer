@@ -27,9 +27,18 @@ export default function AppPage() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
     fetchJobs();
 
-    // 开启 Supabase 实时推送
+    // ⭐ 实时订阅：监听数据库更新，自动同步卡片状态
     const channel = supabase.channel("db-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => fetchJobs())
+      .on(
+        "postgres_changes", 
+        { event: "UPDATE", schema: "public", table: "jobs" }, 
+        (payload) => {
+          // 当后台分析完成，更新 status 时，前端自动替换该卡片的数据
+          setJobs((currentJobs) =>
+            currentJobs.map((job) => (job.id === payload.new.id ? payload.new : job))
+          );
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -38,11 +47,24 @@ export default function AppPage() {
   const handleSubmit = async () => {
     if (!resume.trim()) return toast.error("请输入简历内容");
     setLoading(true);
+    
     try {
-      await analyzeResume({ resumeText: resume, position, userId: user.id });
-      toast.success("任务已提交，Gemini 2.5 Flash 正在快速处理...");
-      setResume("");
-      fetchJobs(); // 手动保底刷新
+      // 1. 调用后端接口并获取分配的 ID
+      const { jobId } = await analyzeResume({ resumeText: resume, position, userId: user.id });
+
+      // 2. ⭐ 占位逻辑：立即向本地列表插入一个“处理中”的假卡片
+      const placeholderCard = {
+        id: jobId,
+        position: position,
+        status: "processing", // 触发 UI 的加载动画
+        created_at: new Date().toISOString(),
+      };
+      
+      setJobs((prev) => [placeholderCard, ...prev]);
+      
+      toast.success("提交成功，AI 正在扫描...");
+      setResume(""); // 清空输入框
+      
     } catch (e) {
       toast.error("提交失败");
     } finally {
@@ -65,7 +87,7 @@ export default function AppPage() {
           <Card>
             <CardHeader>
               <CardTitle>开始分析</CardTitle>
-              <CardDescription>由 Gemini 2.5 Flash 提供毫秒级分析支持</CardDescription>
+              <CardDescription>提交后卡片将立即出现并由 AI 实时分析</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Select value={position} onValueChange={setPosition}>
@@ -95,14 +117,15 @@ export default function AppPage() {
           <h2 className="font-bold flex items-center gap-2"><History /> 分析历史</h2>
           <div className="space-y-4 max-h-[80vh] overflow-y-auto pr-2">
             {jobs.map((job) => (
-              <Card key={job.id} className="border-l-4 border-l-blue-500">
+              <Card key={job.id} className={`border-l-4 ${job.status === 'processing' ? 'border-l-zinc-300 animate-pulse' : 'border-l-blue-500'}`}>
                 <CardContent className="pt-4">
                   <div className="flex justify-between mb-4">
                     <span className="font-bold">{job.position}</span>
                     <Badge variant={job.status === "done" ? "default" : "secondary"}>
-                      {job.status === "processing" ? "Flash 正在扫描..." : job.status}
+                      {job.status === "processing" ? "AI 正在分析..." : job.status}
                     </Badge>
                   </div>
+
                   {job.status === "done" && job.result ? (
                     <div className="space-y-2 text-sm">
                       <div className="p-2 bg-green-50 text-green-700 rounded border border-green-100">
@@ -113,9 +136,12 @@ export default function AppPage() {
                         <ul className="list-disc pl-4">{job.result.risks.map((r: any, i: number) => <li key={i}>{r}</li>)}</ul>
                       </div>
                     </div>
-                  ) : job.status === "processing" && (
-                    <div className="text-center py-4 text-zinc-400 animate-pulse">AI 正在深度分析中...</div>
-                  )}
+                  ) : job.status === "processing" ? (
+                    <div className="flex items-center justify-center py-6 text-zinc-400">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      <span>正在调用 Gemini 后台解析，请稍候...</span>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             ))}
