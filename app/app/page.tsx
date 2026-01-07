@@ -89,9 +89,11 @@ export default function AppPage() {
                   <SelectItem value="数据分析师">数据分析师</SelectItem>
                 </SelectContent>
               </Select>
+              // 在 app/app/page.tsx 中找到对应的 Textarea
               <Textarea 
                 placeholder="在此粘贴简历全文内容..." 
-                className="min-h-[400px] bg-zinc-50/50 resize-none" 
+                // 修改这里：将 min-h 改为 h，并确保有 resize-none
+                className="h-[400px] bg-zinc-50/50 resize-none" 
                 value={resume}
                 onChange={(e) => setResume(e.target.value)}
               />
