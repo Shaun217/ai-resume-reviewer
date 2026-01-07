@@ -66,14 +66,25 @@ async function runAiAnalysis(jobId: string, text: string, pos: string) {
     // ⭐ 核心修改：指定调用 gemini-2.5-flash 模型
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
-    const prompt = `
+    // 在 runAiAnalysis 函数中修改 prompt
+      const prompt = `
       你是一位资深 HR 专家。请针对【${pos}】岗位分析这份简历。
       要求：仅返回 JSON 格式字符串，禁止任何 Markdown 标记或解释性文字。
-      格式：{"hire_recommendation": "yes/no", "risks": ["风险点1", "风险点2"]}
-      
+
+      JSON 格式规范：
+      {
+        "hire_recommendation": "yes/no",
+        "highlights": ["亮点1", "亮点2", "亮点3"], 
+        "risks": ["风险点1", "风险点2"]
+      }
+
+      注意：
+      1. highlights 必须是 1-3 条最核心的竞争力总结。
+      2. hire_recommendation 为 yes 时建议安排面试，no 为暂不匹配。
+
       简历内容：
       ${text}
-    `;
+      `;
 
     console.log(">>> [节点 4] 正在向 Google 发起请求...");
     const result = await model.generateContent(prompt);
